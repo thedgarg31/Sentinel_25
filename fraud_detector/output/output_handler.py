@@ -2,7 +2,7 @@ class OutputHandler:
     """
     Handles the output of the fraud detection system, now including LLM reasoning.
     """
-    def display_results(self, fraud_score, threshold=0.7, reasoning=None):
+    def display_results(self, fraud_score, threshold=0.40, reasoning=None):
         """
         Displays the final fraud assessment.
 
@@ -15,12 +15,13 @@ class OutputHandler:
         # We've added 'reasoning=None' to the function definition and logic to print it.
 
         print(f"Final Fraud Score: {fraud_score:.2f}")
+        print(f"Fraud Threshold: {threshold:.2f}")
 
         # Only print the reasoning if it was provided (i.e., if the LLM ran)
         if reasoning:
             print(f"LLM Reasoning: {reasoning}")
 
         if fraud_score >= threshold:
-            print("\nALERT: This call is HIGHLY LIKELY to be fraudulent.")
+            print(f"\n🚨 ALERT: This call is HIGHLY LIKELY to be fraudulent (Score {fraud_score:.2f} >= {threshold:.2f}).")
         else:
-            print("\nAnalysis Complete: This call appears to be legitimate.")
+            print(f"\n✅ Analysis Complete: This call appears to be legitimate (Score {fraud_score:.2f} < {threshold:.2f}).")
