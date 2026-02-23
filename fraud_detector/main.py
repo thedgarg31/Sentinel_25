@@ -5,6 +5,7 @@ from analyzer.audio_analyzer.acoustic_analyzer import AcousticAnalyzer
 from fusion_and_decision.master_model import MasterModel
 from fusion_and_decision.llm_verifier import LLMVerifier
 from output.output_handler import OutputHandler
+import datetime
 
 def main():
     # --- Configuration ---
@@ -14,7 +15,7 @@ def main():
     # --- Initialization ---
     print("Initializing components...")
     
-    initial_model = MasterModel()
+    initial_model = MasterModel(use_dynamic_threshold=True)
     output_handler = OutputHandler()
     text_extractor = TextFeatureExtractor()
     transcriber = Transcriber(model_size="small", compute_type="int8")
@@ -66,17 +67,29 @@ def main():
     print(f"Extracted Textual Features: {textual_features}")
     print(f"Extracted Acoustic Features: {acoustic_features}")
 
+    # Create call metadata for dynamic threshold generation
+    call_metadata = {
+        'duration': 120,  # Estimated duration in seconds
+        'timestamp': datetime.datetime.now(),
+        'first_time_caller': True,  # Assume unknown caller
+        'repeated_calls': False,
+        'international_call': False
+    }
+    print(f"Call Metadata: {call_metadata}")
+
     # --- THE FIX IS HERE ---
     # The model returns a dictionary, so we extract the 'fraud_score' value from it.
-    preliminary_result = initial_model.predict(textual_features, acoustic_features)
+    preliminary_result = initial_model.predict(textual_features, acoustic_features, call_metadata)
     preliminary_score = preliminary_result['fraud_score'] # <-- CRITICAL FIX #1
     print(f"Preliminary Result: {preliminary_result}")
     
     # Now this line will work correctly because preliminary_score is a number.
     print(f"Preliminary Score (based on keywords/rules): {preliminary_score:.2f}")
+    print(f"Dynamic Threshold Used: {preliminary_result['threshold_used']:.2f}")
 
     # Initialize final results with the preliminary findings
     final_score = preliminary_score # <-- CRITICAL FIX #2 (use the number, not the dict)
+    final_threshold = preliminary_result['threshold_used']
     llm_reasoning = "N/A (Score was below the threshold for LLM verification)"
 
     # --- STAGE 2: Contextual Verification with Local LLM (if needed) ---
@@ -98,7 +111,17 @@ def main():
 
     # --- 4. FINAL OUTPUT ---
     print("\n--- Final Assessment ---")
-    output_handler.display_results(final_score, reasoning=llm_reasoning)
+    
+    # Create final result dict for output handler
+    final_result = {
+        'fraud_score': final_score,
+        'threshold_used': final_threshold,
+        'threshold_analysis': preliminary_result.get('threshold_analysis', {}),
+        'is_fraud': preliminary_result.get('is_fraud', False),
+        'confidence': preliminary_result.get('confidence', 'medium')
+    }
+    
+    output_handler.display_results(final_result, reasoning=llm_reasoning)
 
 
 if __name__ == "__main__":

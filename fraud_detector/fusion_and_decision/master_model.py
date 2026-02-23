@@ -1,15 +1,22 @@
 import datetime
+from .dynamic_threshold_generator import DynamicThresholdGenerator
 
 class MasterModel:
     """
     An advanced, hybrid master model for fraud detection. It combines a weighted
     scoring system with a rule-based engine to detect critical "knockout" fraud
     indicators and suspicious tactic combinations for superior accuracy.
+    NOW WITH DYNAMIC THRESHOLD GENERATION FOR EACH CALL.
     """
     
-    def __init__(self):
-        """Initialize the master model with calibrated weights and thresholds."""
-        self.FRAUD_THRESHOLD = 0.40 # A more robust threshold for the new logic
+    def __init__(self, use_dynamic_threshold=True):
+        """Initialize the master model with calibrated weights and dynamic threshold."""
+        self.FRAUD_THRESHOLD = 0.40 # Fallback threshold for backward compatibility
+        self.use_dynamic_threshold = use_dynamic_threshold
+        
+        # Initialize dynamic threshold generator
+        if self.use_dynamic_threshold:
+            self.threshold_generator = DynamicThresholdGenerator()
         
         # Base weights for general suspicion level
         self.TEXT_WEIGHT = 0.7
@@ -27,14 +34,17 @@ class MasterModel:
         
         print("✓ Hybrid MasterModel initialized.")
         print(f"  - Base Fraud Threshold: {self.FRAUD_THRESHOLD}")
+        print(f"  - Dynamic Threshold: {'ENABLED' if self.use_dynamic_threshold else 'DISABLED'}")
 
-    def predict(self, text_features, acoustic_features):
+    def predict(self, text_features, acoustic_features, call_metadata=None):
         """
         Predicts fraud using a hybrid of weighted scoring and a rule-based engine.
+        NOW WITH DYNAMIC THRESHOLD GENERATION.
 
         Args:
             text_features (dict): Features from the text analyzer.
             acoustic_features (dict): Features from the acoustic analyzer.
+            call_metadata (dict, optional): Call information for dynamic threshold.
 
         Returns:
             dict: A comprehensive fraud analysis result.
@@ -50,12 +60,28 @@ class MasterModel:
             # --- 2. Apply Rule-Based Engine for Score Adjustment ---
             final_score, rule_based_notes, triggered_rules = self._apply_fraud_rules(base_combined_score, text_features)
 
-            # --- 3. Final Determination ---
-            is_fraud = final_score >= self.FRAUD_THRESHOLD
+            # --- 3. Generate Dynamic Threshold (if enabled) ---
+            if self.use_dynamic_threshold and call_metadata:
+                dynamic_threshold, threshold_analysis = self.threshold_generator.generate_threshold(
+                    call_metadata, acoustic_features, text_features
+                )
+                threshold_used = dynamic_threshold
+                threshold_info = threshold_analysis
+            else:
+                threshold_used = self.FRAUD_THRESHOLD
+                threshold_info = {
+                    'base_threshold': self.FRAUD_THRESHOLD,
+                    'final_threshold': self.FRAUD_THRESHOLD,
+                    'risk_level': 'Standard',
+                    'threshold_rationale': f"Using standard threshold: {self.FRAUD_THRESHOLD}"
+                }
+
+            # --- 4. Final Determination ---
+            is_fraud = final_score >= threshold_used
             confidence = self._calculate_confidence(final_score)
             
             explanation, triggered_features = self._generate_final_output(
-                final_score, is_fraud, rule_based_notes, text_features, base_text_score, base_audio_score
+                final_score, is_fraud, rule_based_notes, text_features, base_text_score, base_audio_score, threshold_used
             )
             
             return {
@@ -64,6 +90,8 @@ class MasterModel:
                 "confidence": confidence,
                 "explanation": explanation,
                 "triggered_features": triggered_features,
+                "threshold_used": threshold_used,
+                "threshold_analysis": threshold_info,
                 "timestamp": datetime.datetime.now().isoformat()
             }
             
@@ -135,14 +163,14 @@ class MasterModel:
         else:
             return "low"
 
-    def _generate_final_output(self, score, is_fraud, notes, text_features, text_score, audio_score):
+    def _generate_final_output(self, score, is_fraud, notes, text_features, text_score, audio_score, threshold_used):
         """Generates the final explanation and triggered features list."""
         if is_fraud:
-            explanation = f"🚨 FRAUD LIKELY (Score: {score:.3f})\n\nThis call was flagged as fraudulent based on the following critical indicators:\n• " + "\n• ".join(notes)
+            explanation = f"🚨 FRAUD LIKELY (Score: {score:.3f} >= Threshold: {threshold_used:.3f})\n\nThis call was flagged as fraudulent based on the following critical indicators:\n• " + "\n• ".join(notes)
             recommendation = "\n\n⚠️ RECOMMENDATION: End the call immediately. Do not provide any personal information."
             explanation += recommendation
         else:
-            explanation = f"✅ LIKELY NORMAL CALL (Score: {score:.3f})\n\nThis call appears legitimate because it lacks the critical indicators and suspicious tactic combinations associated with fraud."
+            explanation = f"✅ LIKELY NORMAL CALL (Score: {score:.3f} < Threshold: {threshold_used:.3f})\n\nThis call appears legitimate because it lacks the critical indicators and suspicious tactic combinations associated with fraud."
 
         # Identify all features that contributed to the base score
         triggered_base_features = [
